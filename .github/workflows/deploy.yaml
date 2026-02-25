@@ -1,0 +1,50 @@
+name: Build and Deploy Vue3
+
+on:
+  push:
+    branches:
+      - prod  # 只有推送到 prod 分支时才触发
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      #  拉取代码
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # 安装 Node 环境
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20' 
+          cache: 'npm'
+
+      #  安装依赖并构建
+      - name: Install and Build
+        run: |
+          npm install
+          npm run build
+
+      # 使用 rsync 部署到服务器
+      - name: Deploy to Server
+        uses: Burnett01/rsync-deployments@7.0.1
+        with:
+          switches: -avz --delete
+          path: dist/                # 本地构建后的目录
+          remote_path: /var/www/swift-design/dist/ # 服务器目标目录
+          remote_host: ${{ secrets.SERVER_IP }}
+          remote_user: ${{ secrets.SERVER_USER }}
+          remote_key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      # 修正权限
+      - name: Post-deploy Permissions
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            chown -R caddy:caddy /var/www/swift-design/dist
+            chmod -R 755 /var/www/swift-design/dist
