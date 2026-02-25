@@ -46,5 +46,4 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            chown -R caddy:caddy /var/www/swift-design/dist
             chmod -R 755 /var/www/swift-design/dist
