@@ -15,7 +15,9 @@ const panStart = ref({ x: 0, y: 0 })
 
 // Text input
 const inputText = ref('')
-const hasContent = computed(() => inputText.value.trim().length > 0)
+const parsedNodes = computed(() => parseTextToNodes(inputText.value))
+const hasContent = computed(() => parsedNodes.value.length > 0)
+const hasInteracted = ref(false)
 
 const sampleText = `小区综合信息服务平台
   用户前台
@@ -50,6 +52,7 @@ watch(() => store.activeProject, (proj) => {
   if (proj) {
     if (proj.funcStruct && proj.funcStruct.nodes.length > 0) {
       inputText.value = nodesToText(proj.funcStruct.nodes, 0)
+      hasInteracted.value = true
     }
     nextTick(() => draw())
   }
@@ -57,6 +60,9 @@ watch(() => store.activeProject, (proj) => {
 
 // Re-draw on text change
 watch(inputText, () => {
+  if (inputText.value.length > 0) {
+    hasInteracted.value = true
+  }
   draw()
   autoSave()
 })
@@ -260,7 +266,7 @@ function draw() {
   for (let y = Math.floor(gy0 / step) * step; y < gy1; y += step) { ctx.beginPath(); ctx.moveTo(gx0, y); ctx.lineTo(gx1, y); ctx.stroke() }
   ctx.restore()
 
-  const nodes = parseTextToNodes(inputText.value)
+  const nodes = parsedNodes.value
   if (nodes.length === 0) {
     ctx.restore()
     return
@@ -398,18 +404,20 @@ function onContextMenu(e: Event) {
 // ====== Actions ======
 function loadSample() {
   inputText.value = sampleText
+  hasInteracted.value = true
 }
 
 function clearAll() {
   if (!inputText.value.trim()) return
   if (!confirm('确定要清空所有内容吗？')) return
   inputText.value = ''
+  hasInteracted.value = false
 }
 
 function exportImage() {
   if (!canvasRef.value) return
 
-  const nodes = parseTextToNodes(inputText.value)
+  const nodes = parsedNodes.value
   if (nodes.length === 0) return
 
   const tempCanvas = document.createElement('canvas')
@@ -460,8 +468,7 @@ function exportImage() {
 
 function autoSave() {
   if (store.activeProject) {
-    const nodes = parseTextToNodes(inputText.value)
-    store.activeProject.funcStruct.nodes = nodes
+    store.activeProject.funcStruct.nodes = parsedNodes.value
   }
 }
 
@@ -581,7 +588,7 @@ onUnmounted(() => {
         @mouseleave="onMouseUp"
         @contextmenu="onContextMenu"
       ></canvas>
-      <div class="canvas-hint" v-if="!hasContent">
+      <div class="canvas-hint" v-if="!hasInteracted && !hasContent">
         <p>在左侧输入层级结构或点击「加载示例」开始</p>
       </div>
     </div>
