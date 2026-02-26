@@ -83,6 +83,29 @@ export interface FuncNode {
     children: FuncNode[]
 }
 
+// ====== Flow Diagram types ======
+export type FlowNodeType = 'start' | 'process' | 'decision' | 'io' | 'end'
+export interface FlowNode {
+    id: string
+    type: FlowNodeType
+    text: string
+    x: number
+    y: number
+    width: number
+    height: number
+}
+export interface FlowEdge {
+    id: string
+    sourceId: string
+    targetId: string
+    label?: string
+    bendX?: number
+    bendY?: number
+    lineStyle?: 'solid' | 'dashed'
+    lineColor?: string
+    lineWidth?: number
+}
+
 // ====== Project ======
 export interface Project {
     id: string
@@ -93,6 +116,7 @@ export interface Project {
     er: { nodes: ERNode[]; links: ERLink[] }
     db: { tables: DBTable[]; relations: DBRelation[] }
     funcStruct: { nodes: FuncNode[] }
+    flow: { nodes: FlowNode[]; edges: FlowEdge[] }
 }
 
 const STORAGE_KEY = 'swiftdesign_projects'
@@ -102,10 +126,21 @@ function generateId(prefix = 'n') {
     return `${prefix}_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`
 }
 
+function normalizeProject(project: Project): Project {
+    if (!project.flow) {
+        project.flow = { nodes: [], edges: [] }
+    }
+    return project
+}
+
 function loadProjects(): Record<string, Project> {
     try {
         const raw = localStorage.getItem(STORAGE_KEY)
-        return raw ? JSON.parse(raw) : {}
+        const parsed = raw ? JSON.parse(raw) as Record<string, Project> : {}
+        Object.keys(parsed).forEach((id) => {
+            parsed[id] = normalizeProject(parsed[id]!)
+        })
+        return parsed
     } catch { return {} }
 }
 
@@ -133,6 +168,7 @@ export const useProjectStore = defineStore('project', () => {
             er: { nodes: [], links: [] },
             db: { tables: [], relations: [] },
             funcStruct: { nodes: [] },
+            flow: { nodes: [], edges: [] },
         }
         projects.value[project.id] = project
         activeProjectId.value = project.id
@@ -199,6 +235,7 @@ export const useProjectStore = defineStore('project', () => {
                     try {
                         const project = JSON.parse(ev.target?.result as string) as Project
                         project.id = generateId('proj')
+                        normalizeProject(project)
                         projects.value[project.id] = project
                         switchProject(project.id)
                         persistProjects(projects.value)

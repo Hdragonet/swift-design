@@ -17,6 +17,7 @@ const tabs = [
   { name: 'ER 图', icon: '🔗', route: '/er' },
   { name: '数据库实体图', icon: '🗃️', route: '/db' },
   { name: '功能结构图', icon: '🏗️', route: '/func' },
+  { name: '流程图', icon: '🧭', route: '/flow' },
 ]
 
 const currentTab = computed(() => route.path)

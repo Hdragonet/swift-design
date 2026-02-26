@@ -27,6 +27,11 @@ const router = createRouter({
       name: 'func',
       component: () => import('@/views/FuncStructEditor.vue'),
     },
+    {
+      path: '/flow',
+      name: 'flow',
+      component: () => import('@/views/FlowEditor.vue'),
+    },
   ],
 })
 
