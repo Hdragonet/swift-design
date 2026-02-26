@@ -142,6 +142,9 @@ function ensureEdgeDefaults(edge: FlowEdge) {
   if (!edge.lineStyle) edge.lineStyle = 'solid'
   if (!edge.lineColor) edge.lineColor = '#334155'
   if (!edge.lineWidth) edge.lineWidth = 1.4
+  if (!edge.labelColor) edge.labelColor = '#94a3b8'
+  if (!edge.labelFontSize) edge.labelFontSize = 12
+  if (typeof edge.labelBold !== 'boolean') edge.labelBold = false
 }
 
 function resetHistory() {
@@ -404,6 +407,9 @@ function onMouseDown(e: MouseEvent) {
         sourceId: connectFromId.value,
         targetId: node.id,
         label: '',
+        labelColor: '#94a3b8',
+        labelFontSize: 12,
+        labelBold: false,
         lineStyle: 'solid',
         lineColor: '#334155',
         lineWidth: 1.4,
@@ -713,6 +719,9 @@ function pasteClipboard() {
       id: generateId('edge'),
       sourceId,
       targetId,
+      labelColor: e.labelColor || '#94a3b8',
+      labelFontSize: e.labelFontSize || 12,
+      labelBold: typeof e.labelBold === 'boolean' ? e.labelBold : false,
       lineStyle: e.lineStyle || 'solid',
       lineColor: e.lineColor || '#334155',
       lineWidth: e.lineWidth || 1.4,
@@ -1119,8 +1128,10 @@ function draw() {
     drawArrow(p.bx, p.by, p.tx, p.ty, strokeColor)
     ctx.setLineDash([])
     if (edge.label) {
-      ctx.fillStyle = '#94a3b8'
-      ctx.font = '12px Inter, sans-serif'
+      const fontSize = Math.max(10, Math.min(36, edge.labelFontSize || 12))
+      const fontWeight = edge.labelBold ? '700' : '400'
+      ctx.fillStyle = edge.labelColor || '#94a3b8'
+      ctx.font = `${fontWeight} ${fontSize}px Inter, sans-serif`
       ctx.textAlign = 'center'
       ctx.fillText(edge.label, p.bx, p.by - 8)
     }
@@ -1310,6 +1321,14 @@ onUnmounted(() => {
       <div v-else-if="selectedEdge" class="inspector-content">
         <label class="form-label">连线标签</label>
         <input class="form-input" v-model="selectedEdge.label" @change="updateEdgeLabel" placeholder="例如：是 / 否" />
+        <label class="form-label">标签颜色</label>
+        <input class="form-input" type="color" v-model="selectedEdge.labelColor" @change="updateEdgeStyle" />
+        <label class="form-label">标签字号</label>
+        <input class="form-input" type="number" min="10" max="36" step="1" v-model.number="selectedEdge.labelFontSize" @change="updateEdgeStyle" />
+        <label class="form-label" style="display:flex; align-items:center; gap:8px;">
+          <input type="checkbox" v-model="selectedEdge.labelBold" @change="updateEdgeStyle" />
+          标签加粗
+        </label>
         <label class="form-label">线型</label>
         <select class="form-select" v-model="selectedEdge.lineStyle" @change="updateEdgeStyle">
           <option value="solid">实线</option>
@@ -1451,3 +1470,5 @@ canvas {
   }
 }
 </style>
+
+
