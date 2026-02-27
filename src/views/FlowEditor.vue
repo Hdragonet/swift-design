@@ -142,6 +142,9 @@ function ensureEdgeDefaults(edge: FlowEdge) {
   if (!edge.lineStyle) edge.lineStyle = 'solid'
   if (!edge.lineColor) edge.lineColor = '#334155'
   if (!edge.lineWidth) edge.lineWidth = 1.4
+  if (!edge.labelColor) edge.labelColor = '#94a3b8'
+  if (!edge.labelFontSize) edge.labelFontSize = 12
+  if (typeof edge.labelBold !== 'boolean') edge.labelBold = false
 }
 
 function resetHistory() {
@@ -309,19 +312,104 @@ function pointToSegmentDistance(px: number, py: number, x1: number, y1: number, 
   return Math.hypot(px - ex, py - ey)
 }
 
+function raySegmentIntersection(
+  ox: number,
+  oy: number,
+  dx: number,
+  dy: number,
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number
+) {
+  const sx = bx - ax
+  const sy = by - ay
+  const cross = dx * sy - dy * sx
+  if (Math.abs(cross) < 1e-7) return null
+  const qpx = ax - ox
+  const qpy = ay - oy
+  const t = (qpx * sy - qpy * sx) / cross
+  const u = (qpx * dy - qpy * dx) / cross
+  if (t >= 0 && u >= 0 && u <= 1) return { x: ox + dx * t, y: oy + dy * t, t }
+  return null
+}
+
+function nodeBoundaryPoint(node: FlowNode, towardX: number, towardY: number) {
+  const vx = towardX - node.x
+  const vy = towardY - node.y
+  const len = Math.hypot(vx, vy)
+  if (len < 1e-6) return { x: node.x, y: node.y }
+  const dx = vx / len
+  const dy = vy / len
+  const hw = node.width / 2
+  const hh = node.height / 2
+
+  if (node.type === 'start' || node.type === 'end') {
+    // Ellipse boundary intersection
+    const d = (dx * dx) / (hw * hw) + (dy * dy) / (hh * hh)
+    const t = d > 0 ? 1 / Math.sqrt(d) : 0
+    return { x: node.x + dx * t, y: node.y + dy * t }
+  }
+
+  if (node.type === 'decision') {
+    // Diamond boundary: |x/hw| + |y/hh| = 1
+    const d = Math.abs(dx) / hw + Math.abs(dy) / hh
+    const t = d > 0 ? 1 / d : 0
+    return { x: node.x + dx * t, y: node.y + dy * t }
+  }
+
+  if (node.type === 'io') {
+    const slant = 20
+    const points = [
+      { x: node.x - hw + slant, y: node.y - hh },
+      { x: node.x + hw, y: node.y - hh },
+      { x: node.x + hw - slant, y: node.y + hh },
+      { x: node.x - hw, y: node.y + hh },
+    ]
+    let best: { x: number; y: number; t: number } | null = null
+    for (let i = 0; i < points.length; i += 1) {
+      const a = points[i]!
+      const b = points[(i + 1) % points.length]!
+      const hit = raySegmentIntersection(node.x, node.y, dx, dy, a.x, a.y, b.x, b.y)
+      if (hit && (!best || hit.t < best.t)) best = hit
+    }
+    if (best) return { x: best.x, y: best.y }
+  }
+
+  // Rectangle boundary
+  const tx = Math.abs(dx) < 1e-7 ? Number.POSITIVE_INFINITY : hw / Math.abs(dx)
+  const ty = Math.abs(dy) < 1e-7 ? Number.POSITIVE_INFINITY : hh / Math.abs(dy)
+  const t = Math.min(tx, ty)
+  return { x: node.x + dx * t, y: node.y + dy * t }
+}
+
+function pushPointOutward(point: { x: number; y: number }, towardX: number, towardY: number, distance: number) {
+  const dx = towardX - point.x
+  const dy = towardY - point.y
+  const len = Math.hypot(dx, dy)
+  if (len < 1e-6) return point
+  return {
+    x: point.x + (dx / len) * distance,
+    y: point.y + (dy / len) * distance,
+  }
+}
+
 function edgePath(edge: FlowEdge): EdgePath | null {
   const source = nodes.value.find((n) => n.id === edge.sourceId)
   const target = nodes.value.find((n) => n.id === edge.targetId)
   if (!source || !target) return null
-  const dx = target.x - source.x
-  const dy = target.y - source.y
-  const dist = Math.max(1, Math.hypot(dx, dy))
-  const sx = source.x + (dx / dist) * (source.width / 2)
-  const sy = source.y + (dy / dist) * (source.height / 2)
-  const tx = target.x - (dx / dist) * (target.width / 2)
-  const ty = target.y - (dy / dist) * (target.height / 2)
-  const bx = edge.bendX ?? (sx + tx) / 2
-  const by = edge.bendY ?? (sy + ty) / 2
+  const rawBx = edge.bendX ?? (source.x + target.x) / 2
+  const rawBy = edge.bendY ?? (source.y + target.y) / 2
+  const preS = nodeBoundaryPoint(source, rawBx, rawBy)
+  const preT = nodeBoundaryPoint(target, rawBx, rawBy)
+  const bx = edge.bendX ?? (preS.x + preT.x) / 2
+  const by = edge.bendY ?? (preS.y + preT.y) / 2
+  const s = pushPointOutward(nodeBoundaryPoint(source, bx, by), bx, by, 2)
+  const t = pushPointOutward(nodeBoundaryPoint(target, bx, by), bx, by, 2)
+  const sx = s.x
+  const sy = s.y
+  const tx = t.x
+  const ty = t.y
   return { sx, sy, bx, by, tx, ty }
 }
 
@@ -404,6 +492,9 @@ function onMouseDown(e: MouseEvent) {
         sourceId: connectFromId.value,
         targetId: node.id,
         label: '',
+        labelColor: '#94a3b8',
+        labelFontSize: 12,
+        labelBold: false,
         lineStyle: 'solid',
         lineColor: '#334155',
         lineWidth: 1.4,
@@ -713,6 +804,9 @@ function pasteClipboard() {
       id: generateId('edge'),
       sourceId,
       targetId,
+      labelColor: e.labelColor || '#94a3b8',
+      labelFontSize: e.labelFontSize || 12,
+      labelBold: typeof e.labelBold === 'boolean' ? e.labelBold : false,
       lineStyle: e.lineStyle || 'solid',
       lineColor: e.lineColor || '#334155',
       lineWidth: e.lineWidth || 1.4,
@@ -1116,11 +1210,12 @@ function draw() {
     ctx.lineTo(p.bx, p.by)
     ctx.lineTo(p.tx, p.ty)
     ctx.stroke()
-    drawArrow(p.bx, p.by, p.tx, p.ty, strokeColor)
     ctx.setLineDash([])
     if (edge.label) {
-      ctx.fillStyle = '#94a3b8'
-      ctx.font = '12px Inter, sans-serif'
+      const fontSize = Math.max(10, Math.min(36, edge.labelFontSize || 12))
+      const fontWeight = edge.labelBold ? '700' : '400'
+      ctx.fillStyle = edge.labelColor || '#94a3b8'
+      ctx.font = `${fontWeight} ${fontSize}px Inter, sans-serif`
       ctx.textAlign = 'center'
       ctx.fillText(edge.label, p.bx, p.by - 8)
     }
@@ -1133,6 +1228,16 @@ function draw() {
   })
 
   nodes.value.forEach(drawNode)
+
+  // Draw arrowheads after nodes so they are never covered by node fills.
+  edges.value.forEach((edge) => {
+    const p = edgePath(edge)
+    if (!p || !ctx) return
+    const selected = edge.id === selectedEdgeId.value
+    const baseColor = edge.lineColor || '#334155'
+    const strokeColor = selected ? '#a78bfa' : baseColor
+    drawArrow(p.bx, p.by, p.tx, p.ty, strokeColor)
+  })
 
   if (marquee.value.active && ctx) {
     const rect = marqueeRect()
@@ -1310,6 +1415,14 @@ onUnmounted(() => {
       <div v-else-if="selectedEdge" class="inspector-content">
         <label class="form-label">连线标签</label>
         <input class="form-input" v-model="selectedEdge.label" @change="updateEdgeLabel" placeholder="例如：是 / 否" />
+        <label class="form-label">标签颜色</label>
+        <input class="form-input" type="color" v-model="selectedEdge.labelColor" @change="updateEdgeStyle" />
+        <label class="form-label">标签字号</label>
+        <input class="form-input" type="number" min="10" max="36" step="1" v-model.number="selectedEdge.labelFontSize" @change="updateEdgeStyle" />
+        <label class="form-label" style="display:flex; align-items:center; gap:8px;">
+          <input type="checkbox" v-model="selectedEdge.labelBold" @change="updateEdgeStyle" />
+          标签加粗
+        </label>
         <label class="form-label">线型</label>
         <select class="form-select" v-model="selectedEdge.lineStyle" @change="updateEdgeStyle">
           <option value="solid">实线</option>
@@ -1451,3 +1564,5 @@ canvas {
   }
 }
 </style>
+
+

@@ -99,6 +99,9 @@ export interface FlowEdge {
     sourceId: string
     targetId: string
     label?: string
+    labelColor?: string
+    labelFontSize?: number
+    labelBold?: boolean
     bendX?: number
     bendY?: number
     lineStyle?: 'solid' | 'dashed'
