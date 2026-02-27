@@ -312,19 +312,104 @@ function pointToSegmentDistance(px: number, py: number, x1: number, y1: number, 
   return Math.hypot(px - ex, py - ey)
 }
 
+function raySegmentIntersection(
+  ox: number,
+  oy: number,
+  dx: number,
+  dy: number,
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number
+) {
+  const sx = bx - ax
+  const sy = by - ay
+  const cross = dx * sy - dy * sx
+  if (Math.abs(cross) < 1e-7) return null
+  const qpx = ax - ox
+  const qpy = ay - oy
+  const t = (qpx * sy - qpy * sx) / cross
+  const u = (qpx * dy - qpy * dx) / cross
+  if (t >= 0 && u >= 0 && u <= 1) return { x: ox + dx * t, y: oy + dy * t, t }
+  return null
+}
+
+function nodeBoundaryPoint(node: FlowNode, towardX: number, towardY: number) {
+  const vx = towardX - node.x
+  const vy = towardY - node.y
+  const len = Math.hypot(vx, vy)
+  if (len < 1e-6) return { x: node.x, y: node.y }
+  const dx = vx / len
+  const dy = vy / len
+  const hw = node.width / 2
+  const hh = node.height / 2
+
+  if (node.type === 'start' || node.type === 'end') {
+    // Ellipse boundary intersection
+    const d = (dx * dx) / (hw * hw) + (dy * dy) / (hh * hh)
+    const t = d > 0 ? 1 / Math.sqrt(d) : 0
+    return { x: node.x + dx * t, y: node.y + dy * t }
+  }
+
+  if (node.type === 'decision') {
+    // Diamond boundary: |x/hw| + |y/hh| = 1
+    const d = Math.abs(dx) / hw + Math.abs(dy) / hh
+    const t = d > 0 ? 1 / d : 0
+    return { x: node.x + dx * t, y: node.y + dy * t }
+  }
+
+  if (node.type === 'io') {
+    const slant = 20
+    const points = [
+      { x: node.x - hw + slant, y: node.y - hh },
+      { x: node.x + hw, y: node.y - hh },
+      { x: node.x + hw - slant, y: node.y + hh },
+      { x: node.x - hw, y: node.y + hh },
+    ]
+    let best: { x: number; y: number; t: number } | null = null
+    for (let i = 0; i < points.length; i += 1) {
+      const a = points[i]!
+      const b = points[(i + 1) % points.length]!
+      const hit = raySegmentIntersection(node.x, node.y, dx, dy, a.x, a.y, b.x, b.y)
+      if (hit && (!best || hit.t < best.t)) best = hit
+    }
+    if (best) return { x: best.x, y: best.y }
+  }
+
+  // Rectangle boundary
+  const tx = Math.abs(dx) < 1e-7 ? Number.POSITIVE_INFINITY : hw / Math.abs(dx)
+  const ty = Math.abs(dy) < 1e-7 ? Number.POSITIVE_INFINITY : hh / Math.abs(dy)
+  const t = Math.min(tx, ty)
+  return { x: node.x + dx * t, y: node.y + dy * t }
+}
+
+function pushPointOutward(point: { x: number; y: number }, towardX: number, towardY: number, distance: number) {
+  const dx = towardX - point.x
+  const dy = towardY - point.y
+  const len = Math.hypot(dx, dy)
+  if (len < 1e-6) return point
+  return {
+    x: point.x + (dx / len) * distance,
+    y: point.y + (dy / len) * distance,
+  }
+}
+
 function edgePath(edge: FlowEdge): EdgePath | null {
   const source = nodes.value.find((n) => n.id === edge.sourceId)
   const target = nodes.value.find((n) => n.id === edge.targetId)
   if (!source || !target) return null
-  const dx = target.x - source.x
-  const dy = target.y - source.y
-  const dist = Math.max(1, Math.hypot(dx, dy))
-  const sx = source.x + (dx / dist) * (source.width / 2)
-  const sy = source.y + (dy / dist) * (source.height / 2)
-  const tx = target.x - (dx / dist) * (target.width / 2)
-  const ty = target.y - (dy / dist) * (target.height / 2)
-  const bx = edge.bendX ?? (sx + tx) / 2
-  const by = edge.bendY ?? (sy + ty) / 2
+  const rawBx = edge.bendX ?? (source.x + target.x) / 2
+  const rawBy = edge.bendY ?? (source.y + target.y) / 2
+  const preS = nodeBoundaryPoint(source, rawBx, rawBy)
+  const preT = nodeBoundaryPoint(target, rawBx, rawBy)
+  const bx = edge.bendX ?? (preS.x + preT.x) / 2
+  const by = edge.bendY ?? (preS.y + preT.y) / 2
+  const s = pushPointOutward(nodeBoundaryPoint(source, bx, by), bx, by, 2)
+  const t = pushPointOutward(nodeBoundaryPoint(target, bx, by), bx, by, 2)
+  const sx = s.x
+  const sy = s.y
+  const tx = t.x
+  const ty = t.y
   return { sx, sy, bx, by, tx, ty }
 }
 
@@ -1125,7 +1210,6 @@ function draw() {
     ctx.lineTo(p.bx, p.by)
     ctx.lineTo(p.tx, p.ty)
     ctx.stroke()
-    drawArrow(p.bx, p.by, p.tx, p.ty, strokeColor)
     ctx.setLineDash([])
     if (edge.label) {
       const fontSize = Math.max(10, Math.min(36, edge.labelFontSize || 12))
@@ -1144,6 +1228,16 @@ function draw() {
   })
 
   nodes.value.forEach(drawNode)
+
+  // Draw arrowheads after nodes so they are never covered by node fills.
+  edges.value.forEach((edge) => {
+    const p = edgePath(edge)
+    if (!p || !ctx) return
+    const selected = edge.id === selectedEdgeId.value
+    const baseColor = edge.lineColor || '#334155'
+    const strokeColor = selected ? '#a78bfa' : baseColor
+    drawArrow(p.bx, p.by, p.tx, p.ty, strokeColor)
+  })
 
   if (marquee.value.active && ctx) {
     const rect = marqueeRect()
