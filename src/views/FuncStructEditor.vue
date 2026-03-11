@@ -253,19 +253,6 @@ function draw() {
   ctx.save()
   ctx.translate(panX.value, panY.value)
 
-  // Draw grid
-  ctx.save()
-  ctx.strokeStyle = 'rgba(30, 41, 59, 0.04)'
-  ctx.lineWidth = 1
-  const step = 40
-  const gx0 = -panX.value - step
-  const gy0 = -panY.value - step
-  const gx1 = W - panX.value + step
-  const gy1 = H - panY.value + step
-  for (let x = Math.floor(gx0 / step) * step; x < gx1; x += step) { ctx.beginPath(); ctx.moveTo(x, gy0); ctx.lineTo(x, gy1); ctx.stroke() }
-  for (let y = Math.floor(gy0 / step) * step; y < gy1; y += step) { ctx.beginPath(); ctx.moveTo(gx0, y); ctx.lineTo(gx1, y); ctx.stroke() }
-  ctx.restore()
-
   const nodes = parsedNodes.value
   if (nodes.length === 0) {
     ctx.restore()

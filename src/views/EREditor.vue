@@ -43,8 +43,6 @@ function draw() {
   ctx.save()
   ctx.translate(pan.value.x, pan.value.y)
 
-  drawGrid(W, H)
-
   // Draw links
   for (const link of links.value) {
     drawLink(link)
@@ -60,20 +58,7 @@ function draw() {
   ctx.restore()
 }
 
-function drawGrid(W: number, H: number) {
-  if (!ctx) return
-  ctx.save()
-  ctx.strokeStyle = 'rgba(99, 102, 241, 0.04)'
-  ctx.lineWidth = 1
-  const step = 40
-  for (let x = (-pan.value.x) - ((-pan.value.x) % step); x < W - pan.value.x; x += step) {
-    ctx.beginPath(); ctx.moveTo(x, -pan.value.y); ctx.lineTo(x, H - pan.value.y); ctx.stroke()
-  }
-  for (let y = (-pan.value.y) - ((-pan.value.y) % step); y < H - pan.value.y; y += step) {
-    ctx.beginPath(); ctx.moveTo(-pan.value.x, y); ctx.lineTo(W - pan.value.x, y); ctx.stroke()
-  }
-  ctx.restore()
-}
+
 
 function drawEntity(node: ERNode) {
   if (!ctx) return
