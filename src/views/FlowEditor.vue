@@ -1172,28 +1172,6 @@ function draw() {
   ctx.translate(pan.value.x, pan.value.y)
   ctx.scale(scale.value, scale.value)
 
-  ctx.save()
-  ctx.strokeStyle = 'rgba(99, 102, 241, 0.08)'
-  ctx.lineWidth = 1
-  const step = 40
-  const vx = -pan.value.x / scale.value
-  const vy = -pan.value.y / scale.value
-  const vw = W / scale.value
-  const vh = H / scale.value
-  for (let x = Math.floor(vx / step) * step; x < vx + vw + step; x += step) {
-    ctx.beginPath()
-    ctx.moveTo(x, vy)
-    ctx.lineTo(x, vy + vh)
-    ctx.stroke()
-  }
-  for (let y = Math.floor(vy / step) * step; y < vy + vh + step; y += step) {
-    ctx.beginPath()
-    ctx.moveTo(vx, y)
-    ctx.lineTo(vx + vw, y)
-    ctx.stroke()
-  }
-  ctx.restore()
-
   edges.value.forEach((edge) => {
     const p = edgePath(edge)
     if (!p || !ctx) return

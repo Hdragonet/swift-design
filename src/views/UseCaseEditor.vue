@@ -52,9 +52,6 @@ function draw() {
   ctx.translate(pan.value.x, pan.value.y)
   ctx.scale(scale.value, scale.value)
 
-  // Draw grid
-  drawGrid(W, H)
-
   // Draw boundaries first (they're behind everything)
   for (const node of nodes.value) {
     if (node.type === 'boundary') drawBoundary(node)
@@ -74,26 +71,7 @@ function draw() {
   ctx.restore()
 }
 
-function drawGrid(W: number, H: number) {
-  if (!ctx) return
-  ctx.save()
-  ctx.strokeStyle = 'rgba(99, 102, 241, 0.04)'
-  ctx.lineWidth = 1 / scale.value
-  const step = 40
-  const vW = W / scale.value
-  const vH = H / scale.value
-  const ox = (pan.value.x / scale.value) % step
-  const oy = (pan.value.y / scale.value) % step
-  const startX = -pan.value.x / scale.value
-  const startY = -pan.value.y / scale.value
-  for (let x = startX - ox; x < startX + vW; x += step) {
-    ctx.beginPath(); ctx.moveTo(x, startY); ctx.lineTo(x, startY + vH); ctx.stroke()
-  }
-  for (let y = startY - oy; y < startY + vH; y += step) {
-    ctx.beginPath(); ctx.moveTo(startX, y); ctx.lineTo(startX + vW, y); ctx.stroke()
-  }
-  ctx.restore()
-}
+
 
 function drawActor(node: UCNode) {
   if (!ctx) return
