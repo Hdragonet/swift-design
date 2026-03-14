@@ -22,6 +22,11 @@ interface EdgePath {
   ty: number
 }
 
+interface EdgeLabelPosition {
+  x: number
+  y: number
+}
+
 const store = useProjectStore()
 
 const canvasRef = ref<HTMLCanvasElement | null>(null)
@@ -422,6 +427,29 @@ function edgePath(edge: FlowEdge): EdgePath | null {
   const tx = t.x
   const ty = t.y
   return { sx, sy, bx, by, tx, ty }
+}
+
+function edgeLabelPosition(path: EdgePath): EdgeLabelPosition {
+  const firstLen = Math.hypot(path.bx - path.sx, path.by - path.sy)
+  const secondLen = Math.hypot(path.tx - path.bx, path.ty - path.by)
+  const useSecondSegment = secondLen >= firstLen
+  const ax = useSecondSegment ? path.bx : path.sx
+  const ay = useSecondSegment ? path.by : path.sy
+  const bx = useSecondSegment ? path.tx : path.bx
+  const by = useSecondSegment ? path.ty : path.by
+  const mx = ax + (bx - ax) * 0.5
+  const my = ay + (by - ay) * 0.5
+  const dx = bx - ax
+  const dy = by - ay
+  const len = Math.hypot(dx, dy) || 1
+  const normalX = -dy / len
+  const normalY = dx / len
+  const offset = 14
+
+  return {
+    x: mx + normalX * offset,
+    y: my + normalY * offset,
+  }
 }
 
 function getEdgeAt(x: number, y: number): FlowEdge | null {
@@ -1203,10 +1231,19 @@ function draw() {
     if (edge.label) {
       const fontSize = Math.max(10, Math.min(36, edge.labelFontSize || 12))
       const fontWeight = edge.labelBold ? '700' : '400'
+      const labelPos = edgeLabelPosition(p)
+      const textWidth = ctx.measureText(edge.label).width
+      const paddingX = 6
+      const paddingY = 4
+      const boxWidth = textWidth + paddingX * 2
+      const boxHeight = fontSize + paddingY * 2
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.96)'
+      ctx.fillRect(labelPos.x - boxWidth / 2, labelPos.y - boxHeight / 2, boxWidth, boxHeight)
       ctx.fillStyle = edge.labelColor || '#94a3b8'
       ctx.font = `${fontWeight} ${fontSize}px Inter, sans-serif`
       ctx.textAlign = 'center'
-      ctx.fillText(edge.label, p.bx, p.by - 8)
+      ctx.textBaseline = 'middle'
+      ctx.fillText(edge.label, labelPos.x, labelPos.y)
     }
     if (selected) {
       ctx.fillStyle = '#f59e0b'
