@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useProjectStore, type FuncNode } from '../stores/project'
+import { setupHiDPICanvas } from '../composables/canvas'
 
 const store = useProjectStore()
 
 const canvasRef = ref<HTMLCanvasElement | null>(null)
+const viewport = ref({ width: 0, height: 0 })
 let ctx: CanvasRenderingContext2D | null = null
 
 // Canvas pan
@@ -131,17 +133,17 @@ function nodesToText(nodes: FuncNode[], level: number): string {
 }
 
 // ====== Layout calculation ======
-const LEVEL_GAP_Y = 50
-const SIBLING_GAP_X = 8
+const LEVEL_GAP_Y = 54
+const SIBLING_GAP_X = 16
 const FONT_SIZE = 13
 const CHAR_LINE_H = 18
-const V_PAD_X = 8
-const V_PAD_Y = 10
 const H_PAD_X = 20
 const H_PAD_Y = 10
+const NODE_MAX_TEXT_WIDTH = 112
 
 interface LayoutNode {
   label: string
+  lines: string[]
   x: number
   y: number
   w: number
@@ -150,33 +152,49 @@ interface LayoutNode {
   children: LayoutNode[]
 }
 
-function computeNodeSize(label: string, isRoot: boolean): { w: number; h: number } {
-  if (isRoot) {
-    const textW = measureHorizontalTextWidth(label)
-    return { w: Math.max(80, textW + H_PAD_X * 2), h: 36 + H_PAD_Y * 2 }
-  } else {
-    // Vertical text: one char per row
-    const chars = [...label]
-    const charW = FONT_SIZE + 2
-    const w = charW + V_PAD_X * 2
-    const h = chars.length * CHAR_LINE_H + V_PAD_Y * 2
-    return { w: Math.max(30, w), h: Math.max(40, h) }
-  }
-}
-
 function measureHorizontalTextWidth(text: string): number {
   if (!ctx) return text.length * 14
   ctx.font = `${FONT_SIZE}px "Inter", "Microsoft YaHei", sans-serif`
   return ctx.measureText(text).width
 }
 
+function wrapLabelLines(label: string, maxWidth: number) {
+  const chars = [...label]
+  if (chars.length === 0) return ['']
+  const lines: string[] = []
+  let current = ''
+
+  for (const char of chars) {
+    const next = current + char
+    if (current && measureHorizontalTextWidth(next) > maxWidth) {
+      lines.push(current)
+      current = char
+    } else {
+      current = next
+    }
+  }
+
+  if (current) lines.push(current)
+  return lines
+}
+
+function computeNodeSize(label: string, isRoot: boolean): { w: number; h: number; lines: string[] } {
+  const maxWidth = isRoot ? 220 : NODE_MAX_TEXT_WIDTH
+  const lines = wrapLabelLines(label, maxWidth)
+  const widest = Math.max(...lines.map(line => measureHorizontalTextWidth(line)), 0)
+  const w = Math.max(isRoot ? 120 : 92, Math.min(maxWidth, widest) + H_PAD_X * 2)
+  const h = Math.max(isRoot ? 56 : 48, lines.length * CHAR_LINE_H + H_PAD_Y * 2)
+  return { w, h, lines }
+}
+
 function computeLayout(nodes: FuncNode[], level: number, isRoot: boolean): LayoutNode[] {
   const layouts = nodes.map(node => {
-    const { w, h } = computeNodeSize(node.label, isRoot)
+    const { w, h, lines } = computeNodeSize(node.label, isRoot)
     const childLayouts = computeLayout(node.children, level + 1, false)
 
     return {
       label: node.label,
+      lines,
       x: 0,
       y: 0,
       w,
@@ -243,8 +261,8 @@ function positionNodes(nodes: LayoutNode[], startX: number, startY: number) {
 // ====== Drawing ======
 function draw() {
   if (!canvasRef.value || !ctx) return
-  const W = canvasRef.value.width
-  const H = canvasRef.value.height
+  const W = viewport.value.width
+  const H = viewport.value.height
   ctx.clearRect(0, 0, W, H)
 
   ctx.fillStyle = '#ffffff'
@@ -336,21 +354,12 @@ function drawNodeRecursive(node: LayoutNode) {
   ctx.fillStyle = '#1e293b'
   ctx.font = `${FONT_SIZE}px "Inter", "Microsoft YaHei", sans-serif`
 
-  if (node.isRoot) {
-    // Horizontal text for root node
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'middle'
-    ctx.fillText(node.label, x + w / 2, y + h / 2, w - 12)
-  } else {
-    // Vertical text: each character drawn top to bottom
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'middle'
-    const chars = [...node.label]
-    const totalTextH = chars.length * CHAR_LINE_H
-    const startTextY = y + (h - totalTextH) / 2 + CHAR_LINE_H / 2
-    for (let i = 0; i < chars.length; i++) {
-      ctx.fillText(chars[i]!, x + w / 2, startTextY + i * CHAR_LINE_H)
-    }
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  const totalTextH = node.lines.length * CHAR_LINE_H
+  const startTextY = y + (h - totalTextH) / 2 + CHAR_LINE_H / 2
+  for (let i = 0; i < node.lines.length; i++) {
+    ctx.fillText(node.lines[i]!, x + w / 2, startTextY + i * CHAR_LINE_H, w - 16)
   }
   ctx.restore()
 
@@ -460,10 +469,14 @@ function autoSave() {
 }
 
 function resizeCanvas() {
-  if (!canvasRef.value) return
-  const container = canvasRef.value.parentElement!
-  canvasRef.value.width = container.clientWidth
-  canvasRef.value.height = container.clientHeight
+  if (!canvasRef.value || !ctx) return
+  const container = canvasRef.value.parentElement
+  viewport.value = setupHiDPICanvas(
+    canvasRef.value,
+    ctx,
+    container?.clientWidth,
+    container?.clientHeight
+  )
   draw()
 }
 

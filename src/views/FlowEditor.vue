@@ -6,6 +6,7 @@ import {
   type FlowNode,
   type FlowNodeType,
 } from '@/stores/project'
+import { setupHiDPICanvas } from '@/composables/canvas'
 
 interface DiagramSnapshot {
   nodes: FlowNode[]
@@ -26,6 +27,8 @@ const store = useProjectStore()
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 const wrapperRef = ref<HTMLDivElement | null>(null)
 const miniCanvasRef = ref<HTMLCanvasElement | null>(null)
+const viewport = ref({ width: 0, height: 0 })
+const miniViewport = ref({ width: 190, height: 130 })
 let ctx: CanvasRenderingContext2D | null = null
 
 const selectedTool = ref<'select' | 'connect' | FlowNodeType>('select')
@@ -175,10 +178,18 @@ function redo() {
 }
 
 function resizeCanvas() {
-  if (!canvasRef.value || !wrapperRef.value) return
+  if (!canvasRef.value || !wrapperRef.value || !ctx) return
   const rect = wrapperRef.value.getBoundingClientRect()
-  canvasRef.value.width = Math.max(200, Math.floor(rect.width))
-  canvasRef.value.height = Math.max(200, Math.floor(rect.height))
+  viewport.value = setupHiDPICanvas(
+    canvasRef.value,
+    ctx,
+    Math.max(200, Math.floor(rect.width)),
+    Math.max(200, Math.floor(rect.height))
+  )
+  const miniCtx = miniCanvasRef.value?.getContext('2d')
+  if (miniCanvasRef.value && miniCtx) {
+    miniViewport.value = setupHiDPICanvas(miniCanvasRef.value, miniCtx, 190, 130)
+  }
 }
 
 function toCanvasPoint(clientX: number, clientY: number) {
@@ -216,8 +227,8 @@ function getDiagramBounds() {
 function centerView(fit = false) {
   if (!canvasRef.value) return
   const bounds = getDiagramBounds()
-  const W = canvasRef.value.width
-  const H = canvasRef.value.height
+  const W = viewport.value.width
+  const H = viewport.value.height
   const contentW = Math.max(1, bounds.maxX - bounds.minX)
   const contentH = Math.max(1, bounds.maxY - bounds.minY)
   if (fit) {
@@ -659,8 +670,8 @@ function onWheel(e: WheelEvent) {
 function miniMapLayout() {
   if (!miniCanvasRef.value) return null
   const bounds = getDiagramBounds()
-  const miniW = miniCanvasRef.value.width
-  const miniH = miniCanvasRef.value.height
+  const miniW = miniViewport.value.width
+  const miniH = miniViewport.value.height
   const worldW = Math.max(1, bounds.maxX - bounds.minX)
   const worldH = Math.max(1, bounds.maxY - bounds.minY)
   const s = Math.min((miniW - 12) / worldW, (miniH - 12) / worldH)
@@ -698,8 +709,8 @@ function drawMiniMap() {
   if (canvasRef.value) {
     const vx = -pan.value.x / scale.value
     const vy = -pan.value.y / scale.value
-    const vw = canvasRef.value.width / scale.value
-    const vh = canvasRef.value.height / scale.value
+    const vw = viewport.value.width / scale.value
+    const vh = viewport.value.height / scale.value
     const rx = layout.offsetX + (vx - layout.bounds.minX) * layout.s
     const ry = layout.offsetY + (vy - layout.bounds.minY) * layout.s
     const rw = vw * layout.s
@@ -721,8 +732,8 @@ function onMiniMapClick(e: MouseEvent) {
   const my = e.clientY - rect.top
   const worldX = layout.bounds.minX + (mx - layout.offsetX) / layout.s
   const worldY = layout.bounds.minY + (my - layout.offsetY) / layout.s
-  pan.value.x = canvasRef.value.width / 2 - worldX * scale.value
-  pan.value.y = canvasRef.value.height / 2 - worldY * scale.value
+  pan.value.x = viewport.value.width / 2 - worldX * scale.value
+  pan.value.y = viewport.value.height / 2 - worldY * scale.value
   draw()
 }
 
@@ -1165,8 +1176,8 @@ function drawArrow(x1: number, y1: number, x2: number, y2: number, color: string
 
 function draw() {
   if (!ctx || !canvasRef.value) return
-  const W = canvasRef.value.width
-  const H = canvasRef.value.height
+  const W = viewport.value.width
+  const H = viewport.value.height
   ctx.clearRect(0, 0, W, H)
   ctx.save()
   ctx.translate(pan.value.x, pan.value.y)
