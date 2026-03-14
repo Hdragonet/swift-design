@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { ref, watch, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useProjectStore, type DBTable, type DBField } from '../stores/project'
+import { setupHiDPICanvas } from '../composables/canvas'
 
 const store = useProjectStore()
 
 const tables = ref<DBTable[]>([])
 const canvasRef = ref<HTMLCanvasElement | null>(null)
+const viewport = ref({ width: 0, height: 0 })
 let ctx: CanvasRenderingContext2D | null = null
 
 const selectedTable = ref<DBTable | null>(null)
@@ -23,6 +25,7 @@ const draggingAttr = ref<{ table: DBTable; fieldIdx: number } | null>(null)
 // Canvas pan
 const panX = ref(0)
 const panY = ref(0)
+const scale = ref(1)
 const panning = ref(false)
 const panStart = ref({ x: 0, y: 0 })
 
@@ -70,12 +73,13 @@ const BASE_ATTR_RY = 20
 
 function draw() {
   if (!canvasRef.value || !ctx) return
-  const W = canvasRef.value.width
-  const H = canvasRef.value.height
+  const W = viewport.value.width
+  const H = viewport.value.height
   ctx.clearRect(0, 0, W, H)
 
   ctx.save()
   ctx.translate(panX.value, panY.value)
+  ctx.scale(scale.value, scale.value)
 
   // Draw each table with its fields
   for (const table of tables.value) {
@@ -222,8 +226,8 @@ function toWorldCoords(e: MouseEvent): { mx: number; my: number } {
   if (!canvasRef.value) return { mx: 0, my: 0 }
   const rect = canvasRef.value.getBoundingClientRect()
   return {
-    mx: e.clientX - rect.left - panX.value,
-    my: e.clientY - rect.top - panY.value,
+    mx: (e.clientX - rect.left - panX.value) / scale.value,
+    my: (e.clientY - rect.top - panY.value) / scale.value,
   }
 }
 
@@ -341,6 +345,40 @@ function onMouseUp() {
     dragging.value = false
     autoSave()
   }
+}
+
+function onWheel(e: WheelEvent) {
+  e.preventDefault()
+  if (!canvasRef.value) return
+  const rect = canvasRef.value.getBoundingClientRect()
+  const mx = e.clientX - rect.left
+  const my = e.clientY - rect.top
+  const oldScale = scale.value
+  const factor = e.deltaY > 0 ? 0.9 : 1.1
+  const nextScale = Math.min(3, Math.max(0.3, Number((oldScale * factor).toFixed(2))))
+  if (nextScale === oldScale) return
+
+  panX.value = mx - (mx - panX.value) * (nextScale / oldScale)
+  panY.value = my - (my - panY.value) * (nextScale / oldScale)
+  scale.value = nextScale
+  draw()
+}
+
+function zoomIn() {
+  scale.value = Math.min(3, Number((scale.value * 1.2).toFixed(2)))
+  draw()
+}
+
+function zoomOut() {
+  scale.value = Math.max(0.3, Number((scale.value / 1.2).toFixed(2)))
+  draw()
+}
+
+function resetView() {
+  panX.value = 0
+  panY.value = 0
+  scale.value = 1
+  draw()
 }
 
 function onContextMenu(e: Event) {
@@ -570,10 +608,14 @@ function autoSave() {
 }
 
 function resizeCanvas() {
-  if (!canvasRef.value) return
-  const container = canvasRef.value.parentElement!
-  canvasRef.value.width = container.clientWidth
-  canvasRef.value.height = container.clientHeight
+  if (!canvasRef.value || !ctx) return
+  const container = canvasRef.value.parentElement
+  viewport.value = setupHiDPICanvas(
+    canvasRef.value,
+    ctx,
+    container?.clientWidth,
+    container?.clientHeight
+  )
   draw()
 }
 
@@ -635,6 +677,18 @@ onUnmounted(() => {
           </div>
         </div>
 
+        <div class="toolbar-section">
+          <div class="toolbar-section-title">View</div>
+          <div style="display: flex; gap: 4px;">
+            <button class="btn btn-secondary btn-sm" @click="zoomOut" style="flex: 1;">-</button>
+            <button class="btn btn-secondary btn-sm" @click="resetView" style="flex: 1;">{{ Math.round(scale * 100) }}%</button>
+            <button class="btn btn-secondary btn-sm" @click="zoomIn" style="flex: 1;">+</button>
+          </div>
+          <p style="font-size: 11px; color: var(--text-muted); margin-top: 6px;">
+            Mouse wheel zooms. Right or middle mouse pans the canvas.
+          </p>
+        </div>
+
         <!-- Selected Table Properties + Field Editing -->
         <div class="toolbar-section" v-if="selectedTable && selectedTool === 'select'">
           <div class="toolbar-section-title">表属性: {{ selectedTable.name }}</div>
@@ -687,6 +741,7 @@ onUnmounted(() => {
         @mousemove="onMouseMove"
         @mouseup="onMouseUp"
         @mouseleave="onMouseUp"
+        @wheel.prevent="onWheel"
         @contextmenu="onContextMenu"
         :class="{ crosshair: selectedTool === 'table', pointer: selectedTool === 'select' }"
       ></canvas>

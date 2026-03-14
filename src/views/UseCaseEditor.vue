@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useProjectStore, type UCNode, type UCRelation, type UCRelationType, type UCNodeType } from '../stores/project'
+import { setupHiDPICanvas } from '../composables/canvas'
 
 const store = useProjectStore()
 
 const canvasRef = ref<HTMLCanvasElement | null>(null)
+const viewport = ref({ width: 0, height: 0 })
 let ctx: CanvasRenderingContext2D | null = null
 
 // State
@@ -44,9 +46,8 @@ function generateId() { return store.generateId('uc') }
 
 function draw() {
   if (!canvasRef.value || !ctx) return
-  const canvas = canvasRef.value
-  const W = canvas.width
-  const H = canvas.height
+  const W = viewport.value.width
+  const H = viewport.value.height
   ctx.clearRect(0, 0, W, H)
   ctx.save()
   ctx.translate(pan.value.x, pan.value.y)
@@ -519,9 +520,8 @@ function onWheel(e: WheelEvent) {
 }
 
 function zoomIn() {
-  const canvas = canvasRef.value!
-  const cx = canvas.width / 2
-  const cy = canvas.height / 2
+  const cx = viewport.value.width / 2
+  const cy = viewport.value.height / 2
   const oldScale = scale.value
   const newScale = Math.min(3, oldScale * 1.2)
   pan.value.x = cx - (cx - pan.value.x) * (newScale / oldScale)
@@ -531,9 +531,8 @@ function zoomIn() {
 }
 
 function zoomOut() {
-  const canvas = canvasRef.value!
-  const cx = canvas.width / 2
-  const cy = canvas.height / 2
+  const cx = viewport.value.width / 2
+  const cy = viewport.value.height / 2
   const oldScale = scale.value
   const newScale = Math.max(0.2, oldScale / 1.2)
   pan.value.x = cx - (cx - pan.value.x) * (newScale / oldScale)
@@ -634,10 +633,14 @@ function autoSave() {
 }
 
 function resizeCanvas() {
-  if (!canvasRef.value) return
-  const container = canvasRef.value.parentElement!
-  canvasRef.value.width = container.clientWidth
-  canvasRef.value.height = container.clientHeight
+  if (!canvasRef.value || !ctx) return
+  const container = canvasRef.value.parentElement
+  viewport.value = setupHiDPICanvas(
+    canvasRef.value,
+    ctx,
+    container?.clientWidth,
+    container?.clientHeight
+  )
   draw()
 }
 

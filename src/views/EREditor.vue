@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useProjectStore, type ERNode, type ERLink, type ERNodeType, type ERCardinality } from '../stores/project'
+import { setupHiDPICanvas } from '../composables/canvas'
 
 const store = useProjectStore()
 const canvasRef = ref<HTMLCanvasElement | null>(null)
+const viewport = ref({ width: 0, height: 0 })
 let ctx: CanvasRenderingContext2D | null = null
 
 const selectedTool = ref<'select' | 'entity' | 'attribute' | 'relationship' | 'connect'>('select')
@@ -19,6 +21,7 @@ const showSqlModal = ref(false)
 const sqlInput = ref('')
 
 const pan = ref({ x: 0, y: 0 })
+const scale = ref(1)
 const isPanning = ref(false)
 const panStart = ref({ x: 0, y: 0 })
 
@@ -37,11 +40,12 @@ function generateId() { return store.generateId('er') }
 
 function draw() {
   if (!canvasRef.value || !ctx) return
-  const W = canvasRef.value.width
-  const H = canvasRef.value.height
+  const W = viewport.value.width
+  const H = viewport.value.height
   ctx.clearRect(0, 0, W, H)
   ctx.save()
   ctx.translate(pan.value.x, pan.value.y)
+  ctx.scale(scale.value, scale.value)
 
   // Draw links
   for (const link of links.value) {
@@ -255,7 +259,10 @@ function hitTest(mx: number, my: number): ERNode | null {
 
 function toCanvasCoord(e: MouseEvent) {
   const rect = canvasRef.value!.getBoundingClientRect()
-  return { x: e.clientX - rect.left - pan.value.x, y: e.clientY - rect.top - pan.value.y }
+  return {
+    x: (e.clientX - rect.left - pan.value.x) / scale.value,
+    y: (e.clientY - rect.top - pan.value.y) / scale.value,
+  }
 }
 
 function onMouseDown(e: MouseEvent) {
@@ -330,6 +337,39 @@ function onMouseMove(e: MouseEvent) {
 function onMouseUp() {
   if (dragging.value) { dragging.value = false; autoSave() }
   isPanning.value = false
+}
+
+function onWheel(e: WheelEvent) {
+  e.preventDefault()
+  if (!canvasRef.value) return
+  const rect = canvasRef.value.getBoundingClientRect()
+  const mx = e.clientX - rect.left
+  const my = e.clientY - rect.top
+  const oldScale = scale.value
+  const factor = e.deltaY > 0 ? 0.9 : 1.1
+  const nextScale = Math.min(3, Math.max(0.3, Number((oldScale * factor).toFixed(2))))
+  if (nextScale === oldScale) return
+
+  pan.value.x = mx - (mx - pan.value.x) * (nextScale / oldScale)
+  pan.value.y = my - (my - pan.value.y) * (nextScale / oldScale)
+  scale.value = nextScale
+  draw()
+}
+
+function zoomIn() {
+  scale.value = Math.min(3, Number((scale.value * 1.2).toFixed(2)))
+  draw()
+}
+
+function zoomOut() {
+  scale.value = Math.max(0.3, Number((scale.value / 1.2).toFixed(2)))
+  draw()
+}
+
+function resetView() {
+  pan.value = { x: 0, y: 0 }
+  scale.value = 1
+  draw()
 }
 
 function onKeyDown(e: KeyboardEvent) {
@@ -569,10 +609,14 @@ function autoSave() {
 }
 
 function resizeCanvas() {
-  if (!canvasRef.value) return
-  const container = canvasRef.value.parentElement!
-  canvasRef.value.width = container.clientWidth
-  canvasRef.value.height = container.clientHeight
+  if (!canvasRef.value || !ctx) return
+  const container = canvasRef.value.parentElement
+  viewport.value = setupHiDPICanvas(
+    canvasRef.value,
+    ctx,
+    container?.clientWidth,
+    container?.clientHeight
+  )
   draw()
 }
 
@@ -670,6 +714,17 @@ onUnmounted(() => {
           <div class="toolbar-section-title">操作</div>
           <button class="btn btn-secondary btn-sm" @click="exportPNG" style="width: 100%;">📷 导出 PNG</button>
         </div>
+        <div class="toolbar-section">
+          <div class="toolbar-section-title">View</div>
+          <div style="display: flex; gap: 4px;">
+            <button class="btn btn-secondary btn-sm" @click="zoomOut" style="flex: 1;">-</button>
+            <button class="btn btn-secondary btn-sm" @click="resetView" style="flex: 1;">{{ Math.round(scale * 100) }}%</button>
+            <button class="btn btn-secondary btn-sm" @click="zoomIn" style="flex: 1;">+</button>
+          </div>
+          <p style="font-size: 11px; color: var(--text-muted); margin-top: 6px;">
+            Mouse wheel zooms. Middle/right mouse or Alt+left mouse pans the canvas.
+          </p>
+        </div>
       </div>
     </aside>
 
@@ -680,6 +735,7 @@ onUnmounted(() => {
         @mousemove="onMouseMove"
         @mouseup="onMouseUp"
         @mouseleave="onMouseUp"
+        @wheel.prevent="onWheel"
         @contextmenu.prevent
         :class="{ crosshair: selectedTool !== 'select' && selectedTool !== 'connect', pointer: selectedTool === 'connect' }"
       ></canvas>
