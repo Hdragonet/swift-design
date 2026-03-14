@@ -18,8 +18,7 @@ const panStart = ref({ x: 0, y: 0 })
 // Text input
 const inputText = ref('')
 const parsedNodes = computed(() => parseTextToNodes(inputText.value))
-const hasContent = computed(() => parsedNodes.value.length > 0)
-const hasInteracted = ref(false)
+const hasInput = computed(() => inputText.value.trim().length > 0)
 
 const sampleText = `小区综合信息服务平台
   用户前台
@@ -54,7 +53,6 @@ watch(() => store.activeProject, (proj) => {
   if (proj) {
     if (proj.funcStruct && proj.funcStruct.nodes.length > 0) {
       inputText.value = nodesToText(proj.funcStruct.nodes, 0)
-      hasInteracted.value = true
     }
     nextTick(() => draw())
   }
@@ -62,9 +60,6 @@ watch(() => store.activeProject, (proj) => {
 
 // Re-draw on text change
 watch(inputText, () => {
-  if (inputText.value.length > 0) {
-    hasInteracted.value = true
-  }
   draw()
   autoSave()
 })
@@ -137,6 +132,8 @@ const LEVEL_GAP_Y = 54
 const SIBLING_GAP_X = 16
 const FONT_SIZE = 13
 const CHAR_LINE_H = 18
+const V_PAD_X = 8
+const V_PAD_Y = 10
 const H_PAD_X = 20
 const H_PAD_Y = 10
 const NODE_MAX_TEXT_WIDTH = 112
@@ -179,11 +176,18 @@ function wrapLabelLines(label: string, maxWidth: number) {
 }
 
 function computeNodeSize(label: string, isRoot: boolean): { w: number; h: number; lines: string[] } {
-  const maxWidth = isRoot ? 220 : NODE_MAX_TEXT_WIDTH
-  const lines = wrapLabelLines(label, maxWidth)
-  const widest = Math.max(...lines.map(line => measureHorizontalTextWidth(line)), 0)
-  const w = Math.max(isRoot ? 120 : 92, Math.min(maxWidth, widest) + H_PAD_X * 2)
-  const h = Math.max(isRoot ? 56 : 48, lines.length * CHAR_LINE_H + H_PAD_Y * 2)
+  if (isRoot) {
+    const lines = wrapLabelLines(label, 220)
+    const widest = Math.max(...lines.map(line => measureHorizontalTextWidth(line)), 0)
+    const w = Math.max(120, Math.min(220, widest) + H_PAD_X * 2)
+    const h = Math.max(56, lines.length * CHAR_LINE_H + H_PAD_Y * 2)
+    return { w, h, lines }
+  }
+
+  const lines = [...label]
+  const charW = FONT_SIZE + 2
+  const w = Math.max(30, charW + V_PAD_X * 2)
+  const h = Math.max(40, lines.length * CHAR_LINE_H + V_PAD_Y * 2)
   return { w, h, lines }
 }
 
@@ -356,10 +360,18 @@ function drawNodeRecursive(node: LayoutNode) {
 
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
-  const totalTextH = node.lines.length * CHAR_LINE_H
-  const startTextY = y + (h - totalTextH) / 2 + CHAR_LINE_H / 2
-  for (let i = 0; i < node.lines.length; i++) {
-    ctx.fillText(node.lines[i]!, x + w / 2, startTextY + i * CHAR_LINE_H, w - 16)
+  if (node.isRoot) {
+    const totalTextH = node.lines.length * CHAR_LINE_H
+    const startTextY = y + (h - totalTextH) / 2 + CHAR_LINE_H / 2
+    for (let i = 0; i < node.lines.length; i++) {
+      ctx.fillText(node.lines[i]!, x + w / 2, startTextY + i * CHAR_LINE_H, w - 16)
+    }
+  } else {
+    const totalTextH = node.lines.length * CHAR_LINE_H
+    const startTextY = y + (h - totalTextH) / 2 + CHAR_LINE_H / 2
+    for (let i = 0; i < node.lines.length; i++) {
+      ctx.fillText(node.lines[i]!, x + w / 2, startTextY + i * CHAR_LINE_H)
+    }
   }
   ctx.restore()
 
@@ -400,14 +412,12 @@ function onContextMenu(e: Event) {
 // ====== Actions ======
 function loadSample() {
   inputText.value = sampleText
-  hasInteracted.value = true
 }
 
 function clearAll() {
   if (!inputText.value.trim()) return
   if (!confirm('确定要清空所有内容吗？')) return
   inputText.value = ''
-  hasInteracted.value = false
 }
 
 function exportImage() {
@@ -588,7 +598,7 @@ onUnmounted(() => {
         @mouseleave="onMouseUp"
         @contextmenu="onContextMenu"
       ></canvas>
-      <div class="canvas-hint" v-if="!hasInteracted && !hasContent">
+      <div class="canvas-hint" v-if="false">
         <p>在左侧输入层级结构或点击「加载示例」开始</p>
       </div>
     </div>
@@ -596,28 +606,32 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.editor-layout { display: flex; width: 100%; height: 100%; }
+.editor-layout {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  background: #ffffff;
+}
 
 .toolbar {
   width: 280px;
-  background: var(--bg-glass);
-  backdrop-filter: blur(16px);
-  border-right: 1px solid var(--border-color);
+  background: #ffffff;
+  border-right: 1px solid #e2e8f0;
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
   overflow-y: auto;
 }
-.toolbar-header { padding: 12px 16px; border-bottom: 1px solid var(--border-color); }
-.toolbar-header h3 { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-secondary); }
+.toolbar-header { padding: 12px 16px; border-bottom: 1px solid #e2e8f0; }
+.toolbar-header h3 { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: #334155; }
 .toolbar-content { flex: 1; overflow-y: auto; display: flex; flex-direction: column; }
-.toolbar-section { padding: 12px; border-bottom: 1px solid var(--border-color); }
+.toolbar-section { padding: 12px; border-bottom: 1px solid #e2e8f0; }
 .toolbar-section:last-child { flex: 1; display: flex; flex-direction: column; border-bottom: none; }
-.toolbar-section-title { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-muted); margin-bottom: 8px; }
+.toolbar-section-title { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; color: #64748b; margin-bottom: 8px; }
 
 .input-hint {
   font-size: 11px;
-  color: var(--text-muted);
+  color: #64748b;
   margin-bottom: 8px;
   line-height: 1.6;
 }
@@ -627,10 +641,10 @@ onUnmounted(() => {
   flex: 1;
   min-height: 300px;
   padding: 10px 12px;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-color);
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
   border-radius: var(--radius-sm);
-  color: var(--text-primary);
+  color: #0f172a;
   font-size: 13px;
   font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
   line-height: 1.7;
@@ -643,16 +657,15 @@ onUnmounted(() => {
   overflow-x: auto;
 }
 .struct-input:focus {
-  border-color: var(--accent-primary);
-  box-shadow: 0 0 0 3px var(--accent-glow);
+  border-color: #94a3b8;
+  box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.2);
 }
 .struct-input::placeholder {
-  color: var(--text-muted);
+  color: #94a3b8;
   opacity: 0.5;
 }
 
 .canvas-container { flex: 1; position: relative; overflow: hidden; background: #ffffff; }
 .canvas-container canvas { display: block; cursor: default; }
-.canvas-hint { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(241, 245, 249, 0.9); backdrop-filter: blur(8px); border: 1px solid #e2e8f0; border-radius: var(--radius-md); padding: 16px 24px; pointer-events: none; }
-.canvas-hint p { font-size: 13px; color: #64748b; }
+.canvas-hint { display: none; }
 </style>
